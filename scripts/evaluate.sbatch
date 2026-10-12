@@ -33,7 +33,7 @@ usage() {
 	echo " REVISION: Only used in huggingface models. If set, this revision of the model will be evaluated."
 	echo " SIZE: Legacy/informational approximate model size in billions."
 	echo " MAX_LENGTH: Optional backend context limit (vLLM max_model_len; Megatron seq_length)."
-	echo " MAX_NEW_TOKENS: Thinking-run default for tasks without a task-local max_gen_toks (default: 16384 when thinking)."
+	echo " MAX_NEW_TOKENS: Generation budget of thinking/reasoning-effort runs; replaces every task's own max_gen_toks (default: 32768 when thinking)."
 	echo " VLLM_TP_SIZE / VLLM_DP_SIZE: Explicit vLLM topology. Defaults to TP=4/DP=1, or TP=1/DP=4 when a model name unambiguously indicates <30B."
 	echo " VLLM_MEMORY_FRACTION: vLLM/SGLang GPU memory fraction (default: 0.8)."
 	echo " MEGATRON_MICRO_BATCH_SIZE: Megatron micro-batch override; otherwise uses numeric BS or 1 when BS=auto."
@@ -292,8 +292,9 @@ LOG_LENGTH_METRICS=$(_norm_bool LOG_LENGTH_METRICS "$LOG_LENGTH_METRICS")
 
 # Thinking emits a trace before the answer; raise the budget unless the caller set it. A model
 # given a reasoning effort (gpt-oss) reasons at every level, so it gets the same budget.
+# 32768 is the largest task-local budget (AIME), so the override below lowers no task.
 if [[ "$ENABLE_THINKING" == "True" || -n "$REASONING_EFFORT" ]] && (( ! MAX_NEW_TOKENS_EXPLICIT )); then
-    MAX_NEW_TOKENS=16384
+    MAX_NEW_TOKENS=32768
     echo "ENABLE_THINKING=True or REASONING_EFFORT set: raising default MAX_NEW_TOKENS to $MAX_NEW_TOKENS"
 fi
 
@@ -498,8 +499,8 @@ fi
 
 THINKING_DEFAULT_MODEL_ARG=""
 if [[ "$ENABLE_THINKING" == "True" || -n "$REASONING_EFFORT" ]]; then
-    # This is a backend default, not a CLI --gen_kwargs override: task-local
-    # generation_kwargs therefore retain priority.
+    # Backend default for any request without a max_gen_toks; the --gen_kwargs
+    # override below is what replaces the task-local budgets.
     THINKING_DEFAULT_MODEL_ARG=",max_gen_toks=$MAX_NEW_TOKENS"
 fi
 
@@ -543,9 +544,6 @@ elif [[ $LM_EVAL_BACKEND == "hf" ]]; then
     # Forward enable_thinking only when explicitly set; unset lets the template default apply.
     (( ENABLE_THINKING_EXPLICIT )) && COMMON_MODEL_ARGS="$COMMON_MODEL_ARGS,enable_thinking=${ENABLE_THINKING}"
     COMMON_MODEL_ARGS="$COMMON_MODEL_ARGS${THINK_ARGS}"
-    if [[ "$ENABLE_THINKING" == "True" ]]; then
-        echo "HF backend: preserving task-local max_gen_toks; no model-level thinking default is available."
-    fi
 elif [[ $LM_EVAL_BACKEND == "openai" ]]; then
     [[ -n "$API_BASE_URL" ]] || die "API_BASE_URL must be set when LM_EVAL_BACKEND=openai (e.g. http://<host>:8000/v1)."
     API_MODEL_NAME=${API_MODEL_NAME:-$MODEL}
@@ -611,10 +609,9 @@ HARNESS_EVAL_DIR=$HARNESS_DIR/eval_$(date +%Y%m%d_%H%M%S)_$SLURM_JOBID
 mkdir -p "$HARNESS_EVAL_DIR"
 cp "$EVAL_RUN_CONFIG" "$HARNESS_EVAL_DIR/.eval-run-config.json"
 
-# Generation kwargs supplied through the CLI update every task's YAML. Deliberately
-# omit max_gen_toks here so task-local budgets retain priority. Thinking's longer
-# fallback is passed as a model default above and is used only when a task has no
-# local max_gen_toks.
+# Generation kwargs supplied through the CLI update every task's YAML. Thinking and
+# reasoning-effort runs set max_gen_toks here: task budgets (e.g. mmlu_pro 2048,
+# ifeval 1280) were sized for a direct answer, and the trace counts against them.
 GEN_KWARGS=""
 if [[ "$ENABLE_THINKING" == "True" ]]; then
     THINK_TEMPERATURE=${THINK_TEMPERATURE:-0.6}
@@ -624,12 +621,17 @@ if [[ "$ENABLE_THINKING" == "True" ]]; then
     if [[ -n "${THINK_REPETITION_PENALTY:-}" ]]; then
         GEN_KWARGS="${GEN_KWARGS},repetition_penalty=${THINK_REPETITION_PENALTY}"
     fi
-    echo "Thinking sampling: do_sample=true temperature=$THINK_TEMPERATURE top_p=$THINK_TOP_P repetition_penalty=${THINK_REPETITION_PENALTY:-<unset>} (task-local max_gen_toks takes priority; backend default=$MAX_NEW_TOKENS)"
+    echo "Thinking sampling: do_sample=true temperature=$THINK_TEMPERATURE top_p=$THINK_TOP_P repetition_penalty=${THINK_REPETITION_PENALTY:-<unset>} max_gen_toks=$MAX_NEW_TOKENS"
 elif [[ -n "${NOTHINK_TEMPERATURE:-}" ]]; then
     # Optional no-think sampling (inert unless NOTHINK_TEMPERATURE is set): greedy-vs-sampling ablation.
     NOTHINK_TOP_P=${NOTHINK_TOP_P:-0.95}
     GEN_KWARGS="do_sample=true,temperature=${NOTHINK_TEMPERATURE},top_p=${NOTHINK_TOP_P}"
     echo "No-think sampling: do_sample=true temperature=$NOTHINK_TEMPERATURE top_p=$NOTHINK_TOP_P"
+fi
+
+if [[ "$ENABLE_THINKING" == "True" || -n "$REASONING_EFFORT" ]]; then
+    GEN_KWARGS="${GEN_KWARGS:+$GEN_KWARGS,}max_gen_toks=${MAX_NEW_TOKENS}"
+    echo "Thinking/reasoning-effort run: max_gen_toks=$MAX_NEW_TOKENS for every task (replaces task-local budgets)"
 fi
 
 MAX_BATCH_SIZE=${MAX_BATCH_SIZE:-""}

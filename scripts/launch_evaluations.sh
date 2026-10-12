@@ -274,6 +274,15 @@ elif [[ -n "$SINGLE_TASK" ]]; then
     exit 1
 fi
 
+# --- Validate run name ---
+# The name is part of the run's output path, and evaluate.sbatch builds its
+# lm-eval command as one string run through `bash -lc`, so whitespace would
+# split --output_path (lm-eval: unrecognized arguments) only once the run starts.
+if [[ "$MODEL_NAME" =~ [[:space:]] ]]; then
+    echo "Error: --name '$MODEL_NAME' must not contain whitespace; use - or _ instead"
+    exit 1
+fi
+
 if [[ ! "$EVAL_CHUNK_SIZE" =~ ^[1-9][0-9]*$ ]]; then
     echo "Error: --chunk-size must be >= 1"
     exit 1

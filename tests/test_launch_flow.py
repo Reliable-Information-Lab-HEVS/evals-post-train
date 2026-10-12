@@ -250,6 +250,15 @@ class LaunchFlowTests(unittest.TestCase):
             sbatch,
         )
 
+    def test_a_run_name_with_whitespace_is_refused(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            completed = _launch(
+                "single", "--task", "hellaswag", "--model", "test/model",
+                "--name", "test im", "--logs-root", tmp,
+            )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("must not contain whitespace", completed.stdout + completed.stderr)
+
     def test_openai_template_switches_need_the_chat_template(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             completed = _launch(

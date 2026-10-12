@@ -424,10 +424,11 @@ bash scripts/launch_evaluations.sh single --task gsm8k_cot --model Qwen/Qwen3-8B
 template on (the reasoning tokens live in it). Any granular flag you pass overrides the umbrella.
 
 Thinking runs also change **generation**: sampling is forced (`do_sample=true`,
-`THINK_TEMPERATURE=0.6`, `THINK_TOP_P=0.95` — reasoning degrades under greedy), and the default
-generation budget rises to 16384 tokens for tasks that do not define `max_gen_toks`. A task's own
-YAML value always takes priority (so AIME keeps its 32768). Override the fallback via the
-`THINK_*` / `MAX_NEW_TOKENS` env vars (see
+`THINK_TEMPERATURE=0.6`, `THINK_TOP_P=0.95` — reasoning degrades under greedy), and every task's
+generation budget becomes 32768 tokens, replacing the task YAML's `max_gen_toks`: those were sized
+for a direct answer (mmlu_pro 2048, ifeval 1280) and the trace counts against them. 32768 is the
+largest task budget (AIME), so no task is lowered. Runs with `--reasoning-effort` get the same
+budget. Override via the `THINK_*` / `MAX_NEW_TOKENS` env vars (see
 [SBATCH Scripts](#sbatch-scripts)); `NOTHINK_TEMPERATURE` enables the same sampling for no-think
 ablations.
 
@@ -970,7 +971,7 @@ Primary SLURM job script for HuggingFace-compatible model evaluation.
 | `BS` | `auto:20` | Batch size |
 | `SIZE` | `1` | Informational/legacy model-size metadata; topology inference uses the model name/path instead |
 | `MAX_LENGTH` | (backend/model default) | Optional total context limit, passed as the backend-native setting (`max_model_len` for vLLM/SGLang, `seq_length` for Megatron, `max_length` for HF/API) |
-| `MAX_NEW_TOKENS` | `16384` with thinking; otherwise unused | Model-level generation fallback for thinking runs. Task YAML `max_gen_toks` always takes priority; an explicit value overrides the fallback. HF has no model-level override and therefore keeps its native fallback for tasks without a value. |
+| `MAX_NEW_TOKENS` | `32768` with thinking or a reasoning effort; otherwise unused | Generation budget of thinking/reasoning-effort runs, passed as `--gen_kwargs max_gen_toks=...` so it replaces every task's own `max_gen_toks`. An explicit value sets that budget. |
 | `VLLM_TP_SIZE` / `VLLM_DP_SIZE` | auto | Explicit vLLM topology; either value can be omitted and is derived from the four allocated GPUs. Both values must multiply to 4. |
 | `VLLM_AUTO_PARALLELISM` | `true` | With no explicit topology, use TP=1/DP=4 only when the model name unambiguously identifies `<30B`; otherwise retain TP=4/DP=1. |
 | `VLLM_MEMORY_FRACTION` | `0.8` | vLLM `gpu_memory_utilization` / SGLang `mem_fraction_static` |

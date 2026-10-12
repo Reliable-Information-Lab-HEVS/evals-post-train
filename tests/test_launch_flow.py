@@ -250,6 +250,26 @@ class LaunchFlowTests(unittest.TestCase):
             sbatch,
         )
 
+    def test_thinking_budget_replaces_task_local_max_gen_toks(self) -> None:
+        # The --gen_kwargs value overrides every task's YAML max_gen_toks (mmlu_pro 2048,
+        # ifeval 1280); 32768 is AIME's own budget, so no task is lowered.
+        sbatch = (REPO_ROOT / "scripts/evaluate.sbatch").read_text()
+        self.assertIn("    MAX_NEW_TOKENS=32768\n", sbatch)
+        block = sbatch[sbatch.index('GEN_KWARGS=""'): sbatch.index('MAX_BATCH_SIZE=${MAX_BATCH_SIZE:-""}')]
+
+        def gen_kwargs(**env: str) -> str:
+            script = block + '\nprintf "%s" "$GEN_KWARGS" >&2\n'
+            base = {"PATH": os.environ["PATH"], "ENABLE_THINKING": "False", "REASONING_EFFORT": "", "MAX_NEW_TOKENS": "32768"}
+            done = subprocess.run(["bash", "-c", script], env=base | env, capture_output=True, text=True, check=True)
+            return done.stderr
+
+        self.assertEqual(
+            gen_kwargs(ENABLE_THINKING="True"),
+            "do_sample=true,temperature=0.6,top_p=0.95,max_gen_toks=32768",
+        )
+        self.assertEqual(gen_kwargs(REASONING_EFFORT="low", MAX_NEW_TOKENS="8192"), "max_gen_toks=8192")
+        self.assertEqual(gen_kwargs(), "")
+
     def test_a_run_name_with_whitespace_is_refused(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             completed = _launch(

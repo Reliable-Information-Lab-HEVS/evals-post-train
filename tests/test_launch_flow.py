@@ -203,6 +203,67 @@ class LaunchFlowTests(unittest.TestCase):
                 for key, value in expected.items():
                     self.assertEqual(config[key], value, key)
 
+    def test_openai_api_endpoint_is_chosen_and_recorded(self) -> None:
+        api = ["--backend", "openai", "--api-base-url", "http://localhost:8000",
+               "--api-model-name", "test-model"]
+        cases = {
+            "default": ([], "false", "API endpoint: completions"),
+            "completions": (["--api-endpoint", "completions"], "false", "API endpoint: completions"),
+            "chat": (["--api-endpoint", "chat-completions"], "true", "API endpoint: chat-completions"),
+            "chat with thinking": (
+                ["--api-endpoint", "chat-completions", "--enable-thinking",
+                 "--think-end-token", "</think>"],
+                "true", "API endpoint: chat-completions",
+            ),
+        }
+        for name, (arguments, recorded, summary) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                completed = _launch(
+                    "single", "--task", "gsm8k", *api, *arguments, "--logs-root", tmp,
+                )
+                output = completed.stdout + completed.stderr
+                self.assertEqual(completed.returncode, 0, output)
+                self.assertIn(summary, output)
+                config = _run_config(tmp)["configuration"]
+                self.assertEqual(config["api_chat_endpoint"], recorded)
+
+    def test_openai_api_endpoint_refusals(self) -> None:
+        api = ["--backend", "openai", "--api-base-url", "http://localhost:8000",
+               "--api-model-name", "test-model"]
+        cases = {
+            "unknown value": (
+                [*api, "--api-endpoint", "responses"],
+                "--api-endpoint must be 'completions' or 'chat-completions'",
+            ),
+            "not openai": (
+                ["--model", "test/model", "--api-endpoint", "chat-completions"],
+                "--api-endpoint only applies with --backend openai",
+            ),
+            "chat without template": (
+                [*api, "--api-endpoint", "chat-completions", "--no-chat-template"],
+                "needs the chat template on every task",
+            ),
+            "chat by type": (
+                [*api, "--api-endpoint", "chat-completions", "--chat-template-by-type"],
+                "needs the chat template on every task",
+            ),
+        }
+        for name, (arguments, message) in cases.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                completed = _launch("single", "--task", "gsm8k", *arguments, "--logs-root", tmp)
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn(message, completed.stdout + completed.stderr)
+
+    def test_evaluate_passes_thinking_to_openai_chat_completions(self) -> None:
+        # The server renders the template there; the harness sends the template args as
+        # chat_template_kwargs and puts the server's reasoning field back between the tokens.
+        sbatch = (REPO_ROOT / "scripts/evaluate.sbatch").read_text()
+        completions = sbatch[sbatch.index('if [[ $API_LM_EVAL_MODEL == "local-completions" ]]; then'):]
+        chat = completions[completions.index("    else"): completions.index("    fi")]
+        self.assertIn("${THINKING_DEFAULT_MODEL_ARG}${THINK_ARGS}", chat)
+        self.assertIn(',enable_thinking=${ENABLE_THINKING}"', chat)
+        self.assertNotIn("need the completions endpoint", sbatch)
+
     def test_openai_takes_thinking_and_its_metrics(self) -> None:
         # The harness strips and measures the reasoning on API models (lm-evaluation-harness #111).
         api = ["--backend", "openai", "--api-base-url", "http://localhost:8000",

@@ -66,6 +66,9 @@
 #                          unless API_BASE_URL is exported). Bare host, /v1 root, or full endpoint URL.
 #   --api-model-name <n> - 'model' field sent in API requests (default: the --model value)
 #   --api-requests-per-minute N - Endpoint-wide request limit for the benchmarked API model
+#   --api-endpoint <e>   - 'completions' (default) or 'chat-completions' for the 'openai' backend.
+#                          chat-completions lets the server render the chat template (generative
+#                          tasks only; required by FC tasks such as bfcl_v3_fc).
 #   --chunk-size N       - Tasks per resumable job chunk (default: 8)
 #   --max-parallel N     - Cap concurrent chunks (default: all generated chunks)
 #   --max-retries N      - Retry waves for missing tasks; chunks halve each wave (default: 1)
@@ -161,6 +164,7 @@ BACKEND_FLAG=""
 API_BASE_URL_FLAG=""
 API_MODEL_NAME_FLAG=""
 API_REQUESTS_PER_MINUTE_FLAG=""
+API_ENDPOINT_FLAG=""
 FEWSHOT_FLAG=""
 # Keep an ambient HARNESS_LIMIT (the graceful launcher has no --limit flag, so callers export
 # it); blanking it here would ship the cleared value into the job. --limit still overrides.
@@ -215,6 +219,7 @@ while [[ $# -gt 0 ]]; do
         --api-base-url) API_BASE_URL_FLAG="$2";       shift 2 ;;
         --api-model-name) API_MODEL_NAME_FLAG="$2";   shift 2 ;;
         --api-requests-per-minute) API_REQUESTS_PER_MINUTE_FLAG="$2"; shift 2 ;;
+        --api-endpoint) API_ENDPOINT_FLAG="$2";       shift 2 ;;
         --megatron-iter) MEGATRON_ITER="$2";            shift 2 ;;
         --limit) HARNESS_LIMIT="$2";            shift 2 ;;
         --harness-branch) HARNESS_BRANCH="$2";        shift 2 ;;
@@ -440,6 +445,25 @@ if [[ -n "$API_BASE_URL_FLAG" || -n "$API_MODEL_NAME_FLAG" ]] && [[ "$EFFECTIVE_
 fi
 if [[ -n "$API_REQUESTS_PER_MINUTE_FLAG" && "$EFFECTIVE_BACKEND" != "openai" ]]; then
     echo "Error: --api-requests-per-minute only applies with --backend openai"
+    exit 1
+fi
+if [[ -n "$API_ENDPOINT_FLAG" ]]; then
+    if [[ "$EFFECTIVE_BACKEND" != "openai" ]]; then
+        echo "Error: --api-endpoint only applies with --backend openai"
+        exit 1
+    fi
+    case "$API_ENDPOINT_FLAG" in
+        completions)      export API_CHAT_ENDPOINT=false ;;
+        chat-completions) export API_CHAT_ENDPOINT=true ;;
+        *) echo "Error: --api-endpoint must be 'completions' or 'chat-completions' (got '$API_ENDPOINT_FLAG')"
+           exit 1 ;;
+    esac
+fi
+# chat/completions only generates: log-likelihood tasks (and their template-free pass)
+# need the completions endpoint.
+if [[ "${API_CHAT_ENDPOINT:-false}" == "true" ]] \
+        && [[ "$CHAT_TEMPLATE_OVERRIDE" == "false" || "$CHAT_TEMPLATE_OVERRIDE" == "by-type" ]]; then
+    echo "Error: --api-endpoint chat-completions needs the chat template on every task (generative tasks only); drop --no-chat-template/--chat-template-by-type or use --api-endpoint completions"
     exit 1
 fi
 
@@ -671,6 +695,11 @@ fi
 if [[ "$EFFECTIVE_BACKEND" == "openai" ]]; then
     echo "  API:    ${API_BASE_URL} (model=${API_MODEL_NAME:-<from --model>})"
     echo "  API RPM: ${API_REQUESTS_PER_MINUTE:-unlimited}"
+    if [[ "${API_CHAT_ENDPOINT:-false}" == "true" ]]; then
+        echo "  API endpoint: chat-completions"
+    else
+        echo "  API endpoint: completions"
+    fi
 fi
 echo "  Slurm:  partition=${SBATCH_PARTITION:-normal} qos=${SBATCH_QOS:-<default>}${SBATCH_RESERVATION:+ reservation=$SBATCH_RESERVATION}"
 echo "  Judge RPM: ${JUDGE_REQUESTS_PER_MINUTE:-unlimited}"

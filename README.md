@@ -498,8 +498,10 @@ Reasoning markers made of special tokens (gpt-oss's `<|channel|>…<|message|>`)
 server's text for that (`skip_special_tokens: false`). `--enable-thinking` on its own only switches
 the template: the reasoning is then scored with the answer, so prefer `--thinking`. A reasoning
 effort raises the default token budget like `--enable-thinking` does (gpt-oss reasons at every
-level). `API_CHAT_ENDPOINT=true` (chat/completions) leaves the template to the server and refuses
-them.
+level). With `--api-endpoint chat-completions` the server renders the template: these settings go
+with each request as `chat_template_kwargs`, and the server returns the reasoning in its own field,
+which the harness puts back between `--think-start-token`/`--think-end-token` (when given) so it is
+stripped and measured the same way.
 
 > [!NOTE]
 > Templates such as Qwen3's default to reasoning when `enable_thinking` is not passed. For a
@@ -1322,7 +1324,7 @@ aaii/run_gdpval.sh --model CSCS-Inference/swiss-ai/Apertus-v1.5-8B \
 
 > [!NOTE]
 > **vLLM vs HF inference**: Generation task results (gsm8k, squadv2) may differ slightly between backends (for instruction-tuned models). Only compare results across models using the same backend. We recommend performing all evaluations with the `vllm` backend (default) to ensure reproducibility.
-- **OpenAI-compatible API backend (`--backend openai`)**: evaluates against an already-running endpoint (e.g. `vllm serve`, the CSCS serving platform) instead of loading the model inside the job. It uses lm-eval's `local-completions` against `/v1/completions`, which serves **both** generative and loglikelihood/MC tasks (mixed suites work) *provided* the server returns prompt logprobs with echo (vLLM does; most commercial APIs do not). With the chat template on, the harness renders the model's template client-side via the HF tokenizer — so the tokenizer must be resolvable (use `--tokenizer` when the served model name is not a pullable HF repo). `API_CHAT_ENDPOINT=true` switches to `/v1/chat/completions` (server-side template; generative tasks ONLY). Auth uses `OPENAI_API_KEY` (defaults to the CSCS serving key). Use `--api-requests-per-minute 30` when the endpoint is rate limited; all chunks in the launch coordinate that budget. The launcher automatically submits this backend through the CPU-only `evaluate_api.sbatch` wrapper.
+- **OpenAI-compatible API backend (`--backend openai`)**: evaluates against an already-running endpoint (e.g. `vllm serve`, the CSCS serving platform) instead of loading the model inside the job. It uses lm-eval's `local-completions` against `/v1/completions`, which serves **both** generative and loglikelihood/MC tasks (mixed suites work) *provided* the server returns prompt logprobs with echo (vLLM does; most commercial APIs do not). With the chat template on, the harness renders the model's template client-side via the HF tokenizer — so the tokenizer must be resolvable (use `--tokenizer` when the served model name is not a pullable HF repo). `--api-endpoint chat-completions` (or `API_CHAT_ENDPOINT=true`) switches to `/v1/chat/completions` (server-side template; generative tasks ONLY, so not with `--no-chat-template`/`--chat-template-by-type`; required by FC tasks such as `bfcl_v3_fc`, which send the functions in the request's `tools` field). The run records it as `api_chat_endpoint`. Auth uses `OPENAI_API_KEY` (defaults to the CSCS serving key). Use `--api-requests-per-minute 30` when the endpoint is rate limited; all chunks in the launch coordinate that budget. The launcher automatically submits this backend through the CPU-only `evaluate_api.sbatch` wrapper.
 - **Megatron-LM**: To run Megatron-LM models natively, clone the [NVIDIA Megatron-LM repository](https://github.com/NVIDIA/Megatron-LM) into the evals-post-train directory (or change the location via the launch script).
 - **Time limits**: The default 11h59m SLURM limit applies to each chunk. Adjust `--chunk-size` to keep individual jobs below it and `--max-parallel` to control concurrent nodes.
 

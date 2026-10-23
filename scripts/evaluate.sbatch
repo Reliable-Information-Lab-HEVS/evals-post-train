@@ -363,7 +363,8 @@ echo "Configuration set:"
 printf '%s\n' "MODEL=$MODEL" "NAME=$NAME" "TOKENIZER=$TOKENIZER" "BS=$BS" "REVISION=$REVISION" \
 	"SIZE=$SIZE" "HARNESS_LIMIT=$HARNESS_LIMIT" "LM_EVAL_HARNESS_BRANCH=$LM_EVAL_HARNESS_BRANCH" \
 	"BOS=$BOS" "TASKS=$TASKS" "MAX_LENGTH=$MAX_LENGTH" "WANDB_ENTITY=$WANDB_ENTITY" \
-	"WANDB_PROJECT=$WANDB_PROJECT" "LM_EVAL_BACKEND=$LM_EVAL_BACKEND" "HF_HOME=$HF_HOME" ""
+	"WANDB_PROJECT=$WANDB_PROJECT" "LM_EVAL_BACKEND=$LM_EVAL_BACKEND" "HF_HOME=$HF_HOME" \
+	"API_CHAT_ENDPOINT=${API_CHAT_ENDPOINT:-false}" ""
 printf '%s\n' "ENABLE_THINKING=$ENABLE_THINKING (explicit=$ENABLE_THINKING_EXPLICIT)" \
 	"AUTODETECT_THINK_TOKENS=$AUTODETECT_THINK_TOKENS" "THINK_START_TOKEN=$THINK_START_TOKEN" \
 	"THINK_END_TOKEN=$THINK_END_TOKEN" "TRACK_THINKING_METRICS=$TRACK_THINKING_METRICS" \
@@ -586,12 +587,12 @@ elif [[ $LM_EVAL_BACKEND == "openai" ]]; then
         COMMON_MODEL_ARGS="$COMMON_MODEL_ARGS${THINKING_DEFAULT_MODEL_ARG}${THINK_ARGS}"
         (( ENABLE_THINKING_EXPLICIT )) && COMMON_MODEL_ARGS="$COMMON_MODEL_ARGS,enable_thinking=${ENABLE_THINKING}"
     else
-        # chat/completions leaves the template to the server, whose reasoning parser (if any)
-        # takes the reasoning out of the reply; the harness would refuse the template args.
-        if (( ENABLE_THINKING_EXPLICIT )) || [[ -n "$REASONING_EFFORT" ]] || [[ -n "$THINK_ARGS" ]]; then
-            die "ENABLE_THINKING/REASONING_EFFORT/think tokens need the completions endpoint (unset API_CHAT_ENDPOINT)."
-        fi
-        COMMON_MODEL_ARGS="$COMMON_MODEL_ARGS,tokenized_requests=False"
+        # chat/completions leaves the template to the server: template arguments
+        # (enable_thinking, reasoning_effort) travel with each request as chat_template_kwargs,
+        # and the server's reasoning parser returns the reasoning in its own field, which the
+        # harness puts back between the think tokens (when given) so it is stripped and measured.
+        COMMON_MODEL_ARGS="$COMMON_MODEL_ARGS,tokenized_requests=False${THINKING_DEFAULT_MODEL_ARG}${THINK_ARGS}"
+        (( ENABLE_THINKING_EXPLICIT )) && COMMON_MODEL_ARGS="$COMMON_MODEL_ARGS,enable_thinking=${ENABLE_THINKING}"
     fi
     # API models take an integer batch size; throughput comes from num_concurrent instead.
     if [[ "$BS" == auto* ]]; then

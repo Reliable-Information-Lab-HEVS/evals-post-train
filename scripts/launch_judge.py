@@ -39,16 +39,20 @@ from swiss_ai_model_launch import JobStatus, LaunchArgs, SlurmLauncher, Topology
 
 # ── Task-to-judge mapping ────────────────────────────────────────────
 
+# A task uses the preset of its longest matching key, so a more specific key overrides a
+# shorter one; None means the task needs no launched judge. multijail, aya_redteaming
+# and linguasafe default to Qwen/Qwen3.8-27B, which is permanently hosted.
 TASK_TO_JUDGE = {
     "alpaca_eval": "llama-3.3-70b",
-    "multijail": "llama-3.3-70b",
-    "aya_redteaming": "llama-3.3-70b",
     "arena_hard_v01": "qwen3.5-27b",
     "arena_hard_v2": "qwen3.5-27b",
     "harmbench": "cais-llama-harmbench",
     "hallulens": "qwen3.5-27b",
     "realtoxicitypromptsllama": "llama-guard",
     "polyglotoxicitypromptsllama": "llama-guard",
+    "polyglotoxicitypromptsllama_v2": "polyguard-qwen",
+    "polyguardprompts": "polyguard-qwen",
+    "polyguardprompts_cls": None,
 }
 
 # ── Judge presets ─────────────────────────────────────────────────────
@@ -97,6 +101,26 @@ JUDGE_PRESETS = {
             # This model's config.json caps max_position_embeddings at 2048 (unlike the
             # other judge presets); vLLM refuses to start above that, so keep it in bounds.
             "--tensor-parallel-size 4 --max-model-len 2048"
+        ),
+    },
+    "polyguard-qwen": {
+        # ToxicityPrompts/PolyGuard-Qwen (Qwen2.5-7B), the multilingual safety classifier
+        # for polyguardprompts and polyglotoxicitypromptsllama_v2. The weights are fp32;
+        # --generation-config vllm skips the model's sampling defaults (the tasks decode
+        # greedily). 12h, so the judge outlives long generation phases; the cleanup job
+        # cancels it when the evaluation ends.
+        "served_model_name": "ToxicityPrompts/PolyGuard-Qwen",
+        "framework": "vllm",
+        "nodes": 1,
+        "time": "12:00:00",
+        "account": "infra01",
+        "partition": "normal",
+        "framework_args": (
+            f"--model {MODEL_REGISTRY / 'ToxicityPrompts/PolyGuard-Qwen'} "
+            "--host 0.0.0.0 "
+            "--served-model-name ToxicityPrompts/PolyGuard-Qwen "
+            "--dtype bfloat16 --generation-config vllm "
+            "--tensor-parallel-size 4 --max-model-len 32768"
         ),
     },
     "llama-guard": {
@@ -211,9 +235,13 @@ def _detect_presets_from_tasks(tasks_file: str) -> set[str]:
 
     presets = set()
     for task in task_names:
-        for judge_task, preset in TASK_TO_JUDGE.items():
-            if judge_task in task:
-                presets.add(preset)
+        # 'single' mode passes a comma-separated task list as one name.
+        for name in task.split(","):
+            matches = [key for key in TASK_TO_JUDGE if key in name]
+            if matches:
+                preset = TASK_TO_JUDGE[max(matches, key=len)]
+                if preset is not None:
+                    presets.add(preset)
     return presets
 
 

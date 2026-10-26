@@ -458,6 +458,8 @@ fi
 # Prepare logs root.
 RUN_ROOT=$LOGS_ROOT/$WANDB_ENTITY/$WANDB_PROJECT/$NAME
 HARNESS_DIR=$RUN_ROOT/harness
+# Per-sample judge verdicts (lm_eval/api/judge_log.py); without this they land in ./judge_logs.
+export LM_EVAL_JUDGE_LOG_DIR=${LM_EVAL_JUDGE_LOG_DIR:-$RUN_ROOT/judge_logs}
 export WANDB_DIR=$RUN_ROOT
 mkdir -p $HARNESS_DIR
 

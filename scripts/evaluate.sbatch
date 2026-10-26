@@ -38,6 +38,7 @@ usage() {
 	echo " VLLM_MEMORY_FRACTION: vLLM/SGLang GPU memory fraction (default: 0.8)."
 	echo " MEGATRON_MICRO_BATCH_SIZE: Megatron micro-batch override; otherwise uses numeric BS or 1 when BS=auto."
 	echo " BOS: Set this to 'true' if you wish to prepend the BOS token when evaluating models."
+	echo " TRUST_REMOTE_CODE: 'true' loads the tokenizer (hf/vllm: also the model) with trust_remote_code=True; hf, vllm and openai backends."
 	echo " LOGS_ROOT: Where are your evaluation wandb&harness logs going to."
 	echo " TASKS: Tasks to run with lm eval harness."
 	echo " WANDB_ENTITY: WandB entity name for uploading results (default: apertus)."
@@ -98,6 +99,7 @@ CKPT_ITER=${CKPT_ITER:-${CKPT_ITERATION:-"latest"}}
 BS=${BS:-"auto:20"}
 SIZE=${SIZE:-1}
 BOS=${BOS:-false}
+TRUST_REMOTE_CODE=${TRUST_REMOTE_CODE:-false}
 LOGS_ROOT=${LOGS_ROOT:-$SCRATCH/eval_logs_start/}
 TASKS=${TASKS:-./configs/apertus/tasks_default.txt}
 TABLE_METRICS=${TABLE_METRICS:-./configs/apertus/tasks_default_main_table.txt}
@@ -362,7 +364,7 @@ echo "Configuration set:"
 # Values go in printf's arguments, not the format string: a '%' would be read as a conversion.
 printf '%s\n' "MODEL=$MODEL" "NAME=$NAME" "TOKENIZER=$TOKENIZER" "BS=$BS" "REVISION=$REVISION" \
 	"SIZE=$SIZE" "HARNESS_LIMIT=$HARNESS_LIMIT" "LM_EVAL_HARNESS_BRANCH=$LM_EVAL_HARNESS_BRANCH" \
-	"BOS=$BOS" "TASKS=$TASKS" "MAX_LENGTH=$MAX_LENGTH" "WANDB_ENTITY=$WANDB_ENTITY" \
+	"BOS=$BOS" "TRUST_REMOTE_CODE=$TRUST_REMOTE_CODE" "TASKS=$TASKS" "MAX_LENGTH=$MAX_LENGTH" "WANDB_ENTITY=$WANDB_ENTITY" \
 	"WANDB_PROJECT=$WANDB_PROJECT" "LM_EVAL_BACKEND=$LM_EVAL_BACKEND" "HF_HOME=$HF_HOME" \
 	"API_CHAT_ENDPOINT=${API_CHAT_ENDPOINT:-false}" ""
 printf '%s\n' "ENABLE_THINKING=$ENABLE_THINKING (explicit=$ENABLE_THINKING_EXPLICIT)" \
@@ -604,6 +606,16 @@ elif [[ $LM_EVAL_BACKEND == "openai" ]]; then
         || echo "openai backend rate limit: $API_REQUESTS_PER_MINUTE requests/minute"
 else
     die "Unsupported LM_EVAL_BACKEND: $LM_EVAL_BACKEND"
+fi
+
+# Opt-in, for models whose tokenizer is custom code (e.g. Kimi-K2): every backend that
+# loads a HF tokenizer here takes the same model_args key. sglang and megatron_lm have
+# their own loaders and are refused rather than silently ignoring it.
+if [[ "$TRUST_REMOTE_CODE" == "true" ]]; then
+    case "$LM_EVAL_BACKEND" in
+        hf|vllm|openai) COMMON_MODEL_ARGS="$COMMON_MODEL_ARGS,trust_remote_code=True" ;;
+        *) die "TRUST_REMOTE_CODE is only supported with the hf, vllm and openai backends (got $LM_EVAL_BACKEND)." ;;
+    esac
 fi
 
 HARNESS_EVAL_DIR=$HARNESS_DIR/eval_$(date +%Y%m%d_%H%M%S)_$SLURM_JOBID

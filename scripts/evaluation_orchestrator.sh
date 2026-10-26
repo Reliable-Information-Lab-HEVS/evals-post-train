@@ -351,7 +351,9 @@ submit_evaluation() {
     python3 -m scripts.eval_state normalize --tasks "$TASKS" \
         --output "$state_dir/expected_tasks.txt"
 
-    repo="swiss-ai/lm-evaluation-harness"
+    # EVAL_HARNESS_REPO_OVERRIDE (owner/name on GitHub) installs the harness from a fork;
+    # --harness-branch still picks the ref within it.
+    repo="${EVAL_HARNESS_REPO_OVERRIDE:-swiss-ai/lm-evaluation-harness}"
     _eval_create_run_config "$model" "$repo" "$state_dir"
 
     if [[ -n "${EVAL_FORCE_TASKS:-}" ]]; then

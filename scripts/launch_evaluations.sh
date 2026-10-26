@@ -693,7 +693,7 @@ if [[ "$EVAL_FAILURE_POLICY" == "resume" ]]; then
     echo "  Max parallel: ${EVAL_MAX_PARALLEL:-all chunks}"
     echo "  Retry waves: $EVAL_MAX_RETRIES"
 fi
-echo "  Harness: swiss-ai/lm-evaluation-harness${HARNESS_BRANCH:+@$HARNESS_BRANCH}"
+echo "  Harness: ${EVAL_HARNESS_REPO_OVERRIDE:-swiss-ai/lm-evaluation-harness}${HARNESS_BRANCH:+@$HARNESS_BRANCH}"
 if [[ "$THINKING_TOUCHED" == "true" ]]; then
     echo "  Thinking: enable=${ENABLE_THINKING_OVERRIDE:-<unset>} autodetect=${AUTODETECT_THINK_TOKENS:-false} track=${TRACK_THINKING_METRICS:-<derive>} lengths=${LOG_LENGTH_METRICS:-false}"
     [[ -n "$THINK_START_TOKEN" || -n "$THINK_END_TOKEN" ]] && echo "  Think tokens: start='${THINK_START_TOKEN:-<none>}' end='${THINK_END_TOKEN:-<none>}'"

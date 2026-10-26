@@ -967,6 +967,7 @@ Primary SLURM job script for HuggingFace-compatible model evaluation.
 | `LM_EVAL_RATE_LIMIT_STATE_DIR` | per-launch controller directory | Shared request-slot state used to coordinate threads, processes, and Slurm nodes; point independent launches at the same directory to share budgets |
 | `OPENAI_API_KEY` | `scripts/openai_api_key.txt`, then `CSCS_SERVING_API` | OpenAI GPT judge or `openai` backend bearer token |
 | `LM_EVAL_HARNESS_BRANCH` | repository HEAD | Branch, tag, or commit installed from the task-selected harness repository (not allowed with `EVAL_PREBUILT_ENV=1`, which uses `requirements/lm-eval-harness.txt`) |
+| `EVAL_HARNESS_REPO_OVERRIDE` | `swiss-ai/lm-evaluation-harness` | GitHub `owner/name` of the harness repository to install, e.g. a fork; `--harness-branch` picks the ref in it (with `EVAL_PREBUILT_ENV=1` the repo needs a pin in `requirements/lm-eval-harness.txt`) |
 | `APPLY_CHAT_TEMPLATE` | `true` | Apply chat template for instruct models |
 | `TOKENIZER` | same as model | Custom tokenizer path |
 | `BOS` | `false` | Prepend BOS token |

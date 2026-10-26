@@ -93,6 +93,42 @@ class LaunchFlowTests(unittest.TestCase):
         self.assertNotIn("#SBATCH --gres", wrapper)
         self.assertNotIn("#SBATCH --exclusive", wrapper)
 
+    def test_trust_remote_code_flag_is_accepted(self) -> None:
+        output = _dry_run(
+            "single",
+            "--task",
+            "hellaswag",
+            "--backend",
+            "openai",
+            "--api-base-url",
+            "http://localhost:8000",
+            "--api-model-name",
+            "test-model",
+            "--trust-remote-code",
+        )
+        self.assertNotIn("Unknown option", output)
+
+    def test_trust_remote_code_reaches_the_model_args(self) -> None:
+        # Runs evaluate.sbatch's own block, so the test follows the script.
+        sbatch = (REPO_ROOT / "scripts/evaluate.sbatch").read_text()
+        start = sbatch.index("# Opt-in, for models whose tokenizer is custom code")
+        block = sbatch[start: sbatch.index("HARNESS_EVAL_DIR=", start)]
+
+        def run(backend: str, flag: str) -> subprocess.CompletedProcess:
+            script = (
+                'die() { echo "DIE: $*"; exit 1; }\n'
+                f'LM_EVAL_BACKEND={backend}; TRUST_REMOTE_CODE={flag}; COMMON_MODEL_ARGS="model=m"\n'
+                f'{block}\necho "ARGS=$COMMON_MODEL_ARGS"\n'
+            )
+            return subprocess.run(["bash", "-c", script], text=True, capture_output=True)
+
+        for backend in ("hf", "vllm", "openai"):
+            self.assertIn("ARGS=model=m,trust_remote_code=True", run(backend, "true").stdout)
+            self.assertIn("ARGS=model=m\n", run(backend, "false").stdout)
+        refused = run("sglang", "true")
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("only supported with the hf, vllm and openai backends", refused.stdout)
+
     def test_debug_is_forwarded_to_deferred_judge_launch(self) -> None:
         orchestrator = (REPO_ROOT / "scripts/evaluation_orchestrator.sh").read_text()
         self.assertIn("launch_args+=(--dry-run)", orchestrator)

@@ -57,6 +57,10 @@
 #                          (multiple_choice/loglikelihood output_type) without it: two lm-eval
 #                          passes per job, merged into one result (scripts/task_output_types.py)
 #   --tokenizer <tok>    - Custom tokenizer (default: same as model)
+#   --trust-remote-code  - Load the tokenizer (and, for hf/vllm, the model) with
+#                          trust_remote_code=True: for models whose tokenizer is custom
+#                          code in the repo (e.g. Kimi-K2's tokenization_kimi.py).
+#                          hf, vllm and openai backends.
 #   --bos                - Prepend BOS token
 #   --num-fewshot N      - Override num_fewshot for all tasks (default: use task YAML defaults)
 #                          Note: tasks with num_fewshot=0 in YAML are never overridden.
@@ -160,6 +164,7 @@ SCRIPT_PATH=""
 CHAT_TEMPLATE_OVERRIDE=""  # "", "true", "false"
 CUSTOM_TOKENIZER=""
 BOS_FLAG=""
+TRUST_REMOTE_CODE_FLAG=""
 BACKEND_FLAG=""
 API_BASE_URL_FLAG=""
 API_MODEL_NAME_FLAG=""
@@ -215,6 +220,7 @@ while [[ $# -gt 0 ]]; do
         --chat-template-by-type) CHAT_TEMPLATE_OVERRIDE="by-type"; shift ;;
         --tokenizer)    CUSTOM_TOKENIZER="$2";        shift 2 ;;
         --bos)          BOS_FLAG="true";              shift ;;
+        --trust-remote-code) TRUST_REMOTE_CODE_FLAG="true"; shift ;;
         --backend)      BACKEND_FLAG="$2";            shift 2 ;;
         --api-base-url) API_BASE_URL_FLAG="$2";       shift 2 ;;
         --api-model-name) API_MODEL_NAME_FLAG="$2";   shift 2 ;;
@@ -526,6 +532,7 @@ fi
 [[ -n "$TRACK_THINKING_METRICS"         ]] && export TRACK_THINKING_METRICS
 [[ "$LOG_LENGTH_METRICS" == "true"      ]] && export LOG_LENGTH_METRICS="true"
 [[ -n "$REASONING_EFFORT"               ]] && export REASONING_EFFORT
+[[ "$TRUST_REMOTE_CODE_FLAG" == "true"  ]] && export TRUST_REMOTE_CODE="true"
 
 # --- Environment defaults ---
 # sbatch reads SBATCH_RESERVATION, SBATCH_QOS and SBATCH_PARTITION natively

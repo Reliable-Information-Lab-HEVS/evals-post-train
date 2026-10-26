@@ -26,6 +26,9 @@ _eval_repo_root() {
 # none of these versioned binaries exist, e.g. on a plain dev machine.
 _eval_prepend_modern_python_path() {
     local cand real dir
+    # Keep a modern python3 that is already first on PATH, e.g. a venv holding
+    # swiss_ai_model_launch for judge launching (see README).
+    python3 -c 'import sys; sys.exit(sys.version_info < (3, 7))' 2>/dev/null && return
     for cand in python3.13 python3.12 python3.11 python3.10 python3.9 python3.8 python3.7; do
         real=$(command -v "$cand" 2>/dev/null) || continue
         dir=$(mktemp -d "${TMPDIR:-/tmp}/eval-py-shim.XXXXXX") || return
